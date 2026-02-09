@@ -6,11 +6,16 @@ A beautiful and modern document scanner mobile application built with React Nati
 
 ### 📱 Dashboard Screen
 - Welcome header with user greeting
+- **Camera functionality** - Take photos using device camera
+- **Gallery upload** - Select and upload documents from photo library
+- Image preview after capture/upload
 - Large, prominent scan button with beautiful gradient design
 - Quick action buttons (Gallery, Import PDF, Share)
 - Recent scans preview section
 - Activity statistics card showing total scans, pages scanned, and weekly activity
 - Modern, clean UI with smooth animations
+- Full-screen camera modal with document guide overlay
+- Permission handling for camera and photo library access
 
 ### 📚 History Screen
 - Comprehensive list of all scanned documents
@@ -32,6 +37,8 @@ A beautiful and modern document scanner mobile application built with React Nati
 - **Framework**: React Native 0.81.5
 - **Platform**: Expo SDK 54
 - **Navigation**: React Navigation 7.x (Bottom Tabs)
+- **Camera**: Expo Camera (with permissions)
+- **Image Picker**: Expo Image Picker
 - **Icons**: @expo/vector-icons
 - **UI**: Custom styled components with modern design principles
 
@@ -104,25 +111,41 @@ npm run web
 
 ## Status
 
-✅ **Frontend Design Complete**
+✅ **Implemented Features**
 - Dashboard UI fully designed
 - History UI fully designed
 - Navigation structure implemented
 - Modern, responsive design
 - Beautiful color scheme and typography
+- **Camera functionality** - Take photos with device camera
+- **Gallery upload** - Upload images from photo library
+- **Image preview** - View captured/uploaded documents
+- **Permissions handling** - Camera and photo library access
 
 🚧 **Pending (Not Implemented)**
-- Camera/scanning functionality
-- Document processing
-- PDF generation
+- Document edge detection and cropping
+- Document processing and enhancement
+- PDF generation and export
 - Cloud storage integration
 - Document sharing functionality
-- Search and filter logic
-- Data persistence
+- Search and filter logic implementation
+- Data persistence and storage
+- OCR (Optical Character Recognition)
 
 ## Notes
 
-This is a **frontend-only** implementation. All data shown is mock data for design purposes. The actual scanning functionality, document processing, and data management features are not yet implemented.
+The app now includes **working camera and gallery upload functionality**. You can:
+- Take photos using the device camera with a full-screen camera view
+- Upload documents from your photo library
+- Preview captured/uploaded images in the dashboard
+
+The camera view includes:
+- Document guide overlay with corner markers
+- Capture button with smooth animations
+- Gallery quick access button
+- Professional UI matching the app's design
+
+Permissions are properly handled for both camera and photo library access.
 
 ## Screenshots
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,19 +6,101 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  Image,
+  Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
 export default function DashboardScreen() {
+  const [scannedImage, setScannedImage] = useState(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraRef, setCameraRef] = useState(null);
+
   // Mock data for recent scans
   const recentScans = [
     { id: 1, name: 'Invoice_2024', pages: 3, date: '2 hours ago' },
     { id: 2, name: 'Receipt_Grocery', pages: 1, date: 'Yesterday' },
     { id: 3, name: 'Contract_Document', pages: 5, date: '2 days ago' },
   ];
+
+  // Handle camera launch
+  const handleOpenCamera = async () => {
+    if (!cameraPermission) {
+      return;
+    }
+
+    if (!cameraPermission.granted) {
+      const { granted } = await requestCameraPermission();
+      if (!granted) {
+        Alert.alert(
+          'Permission Required',
+          'Camera permission is needed to scan documents.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
+
+    setShowCamera(true);
+  };
+
+  // Handle taking a photo
+  const handleTakePhoto = async () => {
+    if (cameraRef) {
+      try {
+        const photo = await cameraRef.takePictureAsync({
+          quality: 0.8,
+          base64: false,
+        });
+        setScannedImage(photo.uri);
+        setShowCamera(false);
+        Alert.alert(
+          'Document Captured!',
+          'Your document has been scanned successfully.',
+          [{ text: 'OK' }]
+        );
+      } catch (error) {
+        console.error('Error taking photo:', error);
+        Alert.alert('Error', 'Failed to capture photo. Please try again.');
+      }
+    }
+  };
+
+  // Handle gallery upload
+  const handleGalleryUpload = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Required',
+        'Gallery permission is needed to upload documents.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setScannedImage(result.assets[0].uri);
+      Alert.alert(
+        'Document Uploaded!',
+        'Your document has been uploaded successfully.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -43,24 +125,48 @@ export default function DashboardScreen() {
         {/* Scan Button Card */}
         <View style={styles.scanCard}>
           <View style={styles.scanCardContent}>
-            <MaterialCommunityIcons 
-              name="scanner" 
-              size={48} 
-              color="#fff" 
-              style={styles.scanIcon}
-            />
-            <Text style={styles.scanCardTitle}>Ready to Scan</Text>
-            <Text style={styles.scanCardSubtitle}>
-              Tap the button below to start scanning a document
-            </Text>
-            
-            <TouchableOpacity style={styles.scanButton}>
-              <View style={styles.scanButtonInner}>
-                <Ionicons name="camera" size={32} color="#fff" />
-              </View>
-            </TouchableOpacity>
-            
-            <Text style={styles.scanButtonLabel}>Start Scanning</Text>
+            {scannedImage ? (
+              <>
+                <Image
+                  source={{ uri: scannedImage }}
+                  style={styles.scannedImagePreview}
+                  resizeMode="cover"
+                />
+                <View style={styles.previewOverlay}>
+                  <TouchableOpacity
+                    style={styles.rescanButton}
+                    onPress={handleOpenCamera}
+                  >
+                    <Ionicons name="camera" size={20} color="#fff" />
+                    <Text style={styles.rescanText}>Scan Again</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <MaterialCommunityIcons 
+                  name="scanner" 
+                  size={48} 
+                  color="#fff" 
+                  style={styles.scanIcon}
+                />
+                <Text style={styles.scanCardTitle}>Ready to Scan</Text>
+                <Text style={styles.scanCardSubtitle}>
+                  Tap the button below to start scanning a document
+                </Text>
+                
+                <TouchableOpacity 
+                  style={styles.scanButton}
+                  onPress={handleOpenCamera}
+                >
+                  <View style={styles.scanButtonInner}>
+                    <Ionicons name="camera" size={32} color="#fff" />
+                  </View>
+                </TouchableOpacity>
+                
+                <Text style={styles.scanButtonLabel}>Start Scanning</Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -68,7 +174,10 @@ export default function DashboardScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={handleGalleryUpload}
+            >
               <View style={[styles.actionIcon, { backgroundColor: '#E3F2FD' }]}>
                 <Ionicons name="images-outline" size={24} color="#2196F3" />
               </View>
@@ -143,6 +252,58 @@ export default function DashboardScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Camera Modal */}
+      <Modal
+        visible={showCamera}
+        animationType="slide"
+        onRequestClose={() => setShowCamera(false)}
+      >
+        <View style={styles.cameraContainer}>
+          <CameraView
+            style={styles.camera}
+            ref={(ref) => setCameraRef(ref)}
+            facing="back"
+          >
+            {/* Camera Header */}
+            <View style={styles.cameraHeader}>
+              <TouchableOpacity
+                style={styles.cameraCloseButton}
+                onPress={() => setShowCamera(false)}
+              >
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.cameraTitle}>Scan Document</Text>
+              <View style={{ width: 40 }} />
+            </View>
+
+            {/* Camera Controls */}
+            <View style={styles.cameraControls}>
+              <View style={styles.cameraGuide}>
+                <View style={styles.cornerTL} />
+                <View style={styles.cornerTR} />
+                <View style={styles.cornerBL} />
+                <View style={styles.cornerBR} />
+              </View>
+              
+              <View style={styles.cameraActions}>
+                <TouchableOpacity style={styles.cameraGalleryButton} onPress={handleGalleryUpload}>
+                  <Ionicons name="images" size={28} color="#fff" />
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.cameraCaptureButton}
+                  onPress={handleTakePhoto}
+                >
+                  <View style={styles.cameraCaptureInner} />
+                </TouchableOpacity>
+                
+                <View style={{ width: 60 }} />
+              </View>
+            </View>
+          </CameraView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -350,5 +511,148 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: '#E5E7EB',
     marginHorizontal: 8,
+  },
+  scannedImagePreview: {
+    width: '100%',
+    height: 200,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  previewOverlay: {
+    alignItems: 'center',
+  },
+  rescanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  rescanText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  cameraCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cameraTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  cameraControls: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingBottom: 40,
+  },
+  cameraGuide: {
+    width: width * 0.85,
+    height: width * 0.85 * 1.4,
+    alignSelf: 'center',
+    marginBottom: 40,
+  },
+  cornerTL: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 40,
+    height: 40,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: '#fff',
+    borderTopLeftRadius: 8,
+  },
+  cornerTR: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderColor: '#fff',
+    borderTopRightRadius: 8,
+  },
+  cornerBL: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    width: 40,
+    height: 40,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderColor: '#fff',
+    borderBottomLeftRadius: 8,
+  },
+  cornerBR: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderColor: '#fff',
+    borderBottomRightRadius: 8,
+  },
+  cameraActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  cameraGalleryButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  cameraCaptureButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#fff',
+  },
+  cameraCaptureInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#fff',
   },
 });
