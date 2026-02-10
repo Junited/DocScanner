@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,106 +7,111 @@ import {
   ScrollView,
   TextInput,
   Dimensions,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { useFocusEffect } from '@react-navigation/native';
+import StorageService from '../services/StorageService';
 
 const { width } = Dimensions.get('window');
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Mock data for scanned documents
-  const documents = [
-    {
-      id: 1,
-      name: 'Invoice_March_2024',
-      pages: 3,
-      size: '2.4 MB',
-      date: 'Mar 8, 2024',
-      time: '10:30 AM',
-      category: 'Invoice',
-    },
-    {
-      id: 2,
-      name: 'Receipt_Grocery_Store',
-      pages: 1,
-      size: '856 KB',
-      date: 'Mar 7, 2024',
-      time: '4:15 PM',
-      category: 'Receipt',
-    },
-    {
-      id: 3,
-      name: 'Contract_Agreement',
-      pages: 5,
-      size: '3.8 MB',
-      date: 'Mar 6, 2024',
-      time: '2:20 PM',
-      category: 'Contract',
-    },
-    {
-      id: 4,
-      name: 'ID_Card_Front',
-      pages: 1,
-      size: '1.2 MB',
-      date: 'Mar 5, 2024',
-      time: '11:45 AM',
-      category: 'ID',
-    },
-    {
-      id: 5,
-      name: 'Business_Card_John',
-      pages: 1,
-      size: '645 KB',
-      date: 'Mar 4, 2024',
-      time: '9:00 AM',
-      category: 'Business Card',
-    },
-    {
-      id: 6,
-      name: 'Report_Q1_2024',
-      pages: 12,
-      size: '5.6 MB',
-      date: 'Mar 3, 2024',
-      time: '3:30 PM',
-      category: 'Report',
-    },
-    {
-      id: 7,
-      name: 'Receipt_Restaurant',
-      pages: 1,
-      size: '720 KB',
-      date: 'Mar 2, 2024',
-      time: '7:45 PM',
-      category: 'Receipt',
-    },
-    {
-      id: 8,
-      name: 'Prescription_Medical',
-      pages: 2,
-      size: '1.5 MB',
-      date: 'Mar 1, 2024',
-      time: '1:15 PM',
-      category: 'Medical',
-    },
-  ];
+  useFocusEffect(
+    React.useCallback(() => {
+      loadDocuments();
+    }, [])
+  );
 
-  const filters = ['All', 'Recent', 'Invoice', 'Receipt', 'Contract'];
+  const loadDocuments = async () => {
+    try {
+      setLoading(true);
+      const docs = await StorageService.getAllDocuments();
+      setDocuments(docs.reverse()); // Show newest first
+    } catch (error) {
+      console.error('Load documents error:', error);
+      Alert.alert('Error', 'Failed to load documents');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadDocuments();
+  };
+
+  const handleDeleteDocument = async (id) => {
+    Alert.alert(
+      'Delete Document',
+      'Are you sure you want to delete this document?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await StorageService.deleteDocument(id);
+              loadDocuments();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete document');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const filters = ['All', 'Passport', 'ID Card', 'Receipt', 'Invoice', 'Contract'];
 
   const getCategoryColor = (category) => {
     const colors = {
-      Invoice: '#6366F1',
-      Receipt: '#10B981',
-      Contract: '#F59E0B',
-      ID: '#EF4444',
-      'Business Card': '#8B5CF6',
-      Report: '#3B82F6',
-      Medical: '#EC4899',
+      passport: '#6366F1',
+      id_card: '#EF4444',
+      driver_license: '#F59E0B',
+      receipt: '#10B981',
+      invoice: '#3B82F6',
+      business_card: '#8B5CF6',
+      prescription: '#EC4899',
+      contract: '#F59E0B',
+      generic: '#6B7280',
     };
     return colors[category] || '#6B7280';
   };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffHrs < 1) return 'Just now';
+    if (diffHrs < 24) return `${diffHrs} hours ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const filteredDocuments = documents.filter(doc => {
+    const matchesSearch = searchQuery === '' || 
+      JSON.stringify(doc).toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesFilter = activeFilter === 'All' || 
+      doc.documentType?.toLowerCase().includes(activeFilter.toLowerCase());
+    
+    return matchesSearch && matchesFilter;
+  });
 
   return (
     <View style={styles.container}>
@@ -175,7 +180,7 @@ export default function HistoryScreen() {
       {/* Document Count */}
       <View style={styles.countContainer}>
         <Text style={styles.countText}>
-          {documents.length} {documents.length === 1 ? 'document' : 'documents'} found
+          {filteredDocuments.length} {filteredDocuments.length === 1 ? 'document' : 'documents'} found
         </Text>
         <TouchableOpacity style={styles.sortButton}>
           <Text style={styles.sortText}>Sort by date</Text>
@@ -188,82 +193,106 @@ export default function HistoryScreen() {
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
-        {documents.map((doc, index) => (
-          <TouchableOpacity
-            key={doc.id}
-            style={[
-              styles.documentCard,
-              index === documents.length - 1 && styles.documentCardLast,
-            ]}
-          >
-            {/* Document Preview Thumbnail */}
-            <View style={styles.documentThumbnail}>
-              <MaterialCommunityIcons
-                name="file-document"
-                size={32}
-                color="#6366F1"
-              />
-              <View
-                style={[
-                  styles.categoryBadge,
-                  { backgroundColor: getCategoryColor(doc.category) },
-                ]}
-              >
-                <Text style={styles.categoryBadgeText}>{doc.pages}</Text>
-              </View>
-            </View>
-
-            {/* Document Info */}
-            <View style={styles.documentInfo}>
-              <Text style={styles.documentName} numberOfLines={1}>
-                {doc.name}
-              </Text>
-              <View style={styles.documentMeta}>
-                <View style={styles.metaItem}>
-                  <Ionicons name="calendar-outline" size={12} color="#999" />
-                  <Text style={styles.metaText}>{doc.date}</Text>
-                </View>
-                <View style={styles.metaDot} />
-                <View style={styles.metaItem}>
-                  <Ionicons name="time-outline" size={12} color="#999" />
-                  <Text style={styles.metaText}>{doc.time}</Text>
-                </View>
-              </View>
-              <View style={styles.documentFooter}>
+        {filteredDocuments.length > 0 ? (
+          filteredDocuments.map((doc, index) => (
+            <TouchableOpacity
+              key={doc.id}
+              style={[
+                styles.documentCard,
+                index === filteredDocuments.length - 1 && styles.documentCardLast,
+              ]}
+              onPress={() => navigation.navigate('DocumentPreview', { 
+                imageUri: doc.imageUri,
+                existingData: doc 
+              })}
+            >
+              {/* Document Preview Thumbnail */}
+              <View style={styles.documentThumbnail}>
+                <MaterialCommunityIcons
+                  name="file-document"
+                  size={32}
+                  color={getCategoryColor(doc.documentType)}
+                />
                 <View
                   style={[
-                    styles.categoryTag,
-                    { backgroundColor: `${getCategoryColor(doc.category)}15` },
+                    styles.categoryBadge,
+                    { backgroundColor: getCategoryColor(doc.documentType) },
                   ]}
                 >
-                  <Text
+                  <Text style={styles.categoryBadgeText}>1</Text>
+                </View>
+              </View>
+
+              {/* Document Info */}
+              <View style={styles.documentInfo}>
+                <Text style={styles.documentName} numberOfLines={1}>
+                  {doc.data?.type || 'Document'}
+                </Text>
+                <View style={styles.documentMeta}>
+                  <View style={styles.metaItem}>
+                    <Ionicons name="calendar-outline" size={12} color="#999" />
+                    <Text style={styles.metaText}>{formatDate(doc.createdAt)}</Text>
+                  </View>
+                  {doc.languages && doc.languages.length > 0 && (
+                    <>
+                      <View style={styles.metaDot} />
+                      <View style={styles.metaItem}>
+                        <Ionicons name="language" size={12} color="#999" />
+                        <Text style={styles.metaText}>{doc.languages[0]}</Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+                <View style={styles.documentFooter}>
+                  <View
                     style={[
-                      styles.categoryTagText,
-                      { color: getCategoryColor(doc.category) },
+                      styles.categoryTag,
+                      { backgroundColor: `${getCategoryColor(doc.documentType)}15` },
                     ]}
                   >
-                    {doc.category}
+                    <Text
+                      style={[
+                        styles.categoryTagText,
+                        { color: getCategoryColor(doc.documentType) },
+                      ]}
+                    >
+                      {doc.documentType?.toUpperCase().replace('_', ' ') || 'UNKNOWN'}
+                    </Text>
+                  </View>
+                  <Text style={styles.documentSize}>
+                    {Math.round(doc.confidence * 100)}% confident
                   </Text>
                 </View>
-                <Text style={styles.documentSize}>{doc.size}</Text>
               </View>
-            </View>
 
-            {/* Action Buttons */}
-            <View style={styles.documentActions}>
-              <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="share-outline" size={20} color="#6366F1" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="ellipsis-horizontal" size={20} color="#6366F1" />
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        ))}
-
-        {/* Empty State (shown when no documents match) */}
-        {documents.length === 0 && (
+              {/* Action Buttons */}
+              <View style={styles.documentActions}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    // Share functionality
+                  }}
+                >
+                  <Ionicons name="share-outline" size={20} color="#6366F1" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleDeleteDocument(doc.id);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons
               name="file-document-outline"
@@ -272,14 +301,19 @@ export default function HistoryScreen() {
             />
             <Text style={styles.emptyStateTitle}>No Documents Found</Text>
             <Text style={styles.emptyStateText}>
-              Start scanning documents to see them here
+              {searchQuery || activeFilter !== 'All' 
+                ? 'No documents match your search'
+                : 'Start scanning documents to see them here'}
             </Text>
           </View>
         )}
       </ScrollView>
 
       {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab}>
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={() => navigation.navigate('Dashboard')}
+      >
         <Ionicons name="camera" size={28} color="#fff" />
       </TouchableOpacity>
     </View>

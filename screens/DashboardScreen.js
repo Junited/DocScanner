@@ -17,7 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 const { width } = Dimensions.get('window');
 
-export default function DashboardScreen() {
+export default function DashboardScreen({ navigation }) {
   const [scannedImage, setScannedImage] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -61,11 +61,9 @@ export default function DashboardScreen() {
         });
         setScannedImage(photo.uri);
         setShowCamera(false);
-        Alert.alert(
-          'Document Captured!',
-          'Your document has been scanned successfully.',
-          [{ text: 'OK' }]
-        );
+        
+        // Navigate to preview screen for AI analysis
+        navigation.navigate('DocumentPreview', { imageUri: photo.uri });
       } catch (error) {
         console.error('Error taking photo:', error);
         Alert.alert('Error', 'Failed to capture photo. Please try again.');
@@ -94,11 +92,10 @@ export default function DashboardScreen() {
 
     if (!result.canceled && result.assets[0]) {
       setScannedImage(result.assets[0].uri);
-      Alert.alert(
-        'Document Uploaded!',
-        'Your document has been uploaded successfully.',
-        [{ text: 'OK' }]
-      );
+      setShowCamera(false);
+      
+      // Navigate to preview screen for AI analysis
+      navigation.navigate('DocumentPreview', { imageUri: result.assets[0].uri });
     }
   };
 
