@@ -14,7 +14,6 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import StorageService from '../services/StorageService';
-import SharingService from '../services/SharingService';
 
 const { width } = Dimensions.get('window');
 
@@ -70,10 +69,6 @@ export default function HistoryScreen({ navigation }) {
         },
       ]
     );
-  };
-
-  const handleShareDocument = async (document) => {
-    SharingService.showShareOptions(document);
   };
 
   const filters = ['All', 'Passport', 'ID Card', 'Receipt', 'Invoice', 'Contract'];
@@ -280,7 +275,7 @@ export default function HistoryScreen({ navigation }) {
                   style={styles.actionButton}
                   onPress={(e) => {
                     e.stopPropagation();
-                    handleShareDocument(doc);
+                    // Share functionality
                   }}
                 >
                   <Ionicons name="share-outline" size={20} color="#6366F1" />

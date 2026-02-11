@@ -3,9 +3,6 @@ import { OPENAI_API_KEY } from '@env';
 
 class OpenAIService {
   constructor() {
-    if (!OPENAI_API_KEY) {
-      console.error('OPENAI_API_KEY is not set in environment variables');
-    }
     this.client = new OpenAI({
       apiKey: OPENAI_API_KEY,
     });

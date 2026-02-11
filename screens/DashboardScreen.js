@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   Modal,
+  Share,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -16,7 +17,6 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import StorageService from '../services/StorageService';
-import SharingService from '../services/SharingService';
 
 const { width } = Dimensions.get('window');
 
@@ -26,27 +26,38 @@ export default function DashboardScreen({ navigation }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [cameraRef, setCameraRef] = useState(null);
   const [recentScans, setRecentScans] = useState([]);
-  const [totalScans, setTotalScans] = useState(0);
+  const [stats, setStats] = useState({
+    totalScans: 0,
+    pagesScanned: 0,
+    thisWeek: 0,
+  });
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [documentsToShare, setDocumentsToShare] = useState([]);
 
+  // Load recent scans from storage
   useFocusEffect(
     React.useCallback(() => {
       loadRecentScans();
+      loadStats();
     }, [])
   );
 
   const loadRecentScans = async () => {
     try {
-      const docs = await StorageService.getAllDocuments();
-      setTotalScans(docs.length);
+      const documents = await StorageService.getAllDocuments();
       // Get the 3 most recent documents
-      setRecentScans(docs.slice(0, 3).map(doc => ({
-        ...doc,
-        name: doc.data?.type || 'Document',
-        pages: 1,
-        date: formatDate(doc.createdAt),
-      })));
+      const recent = documents
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 3)
+        .map(doc => ({
+          id: doc.id,
+          name: doc.data?.type || 'Document',
+          pages: 1,
+          date: formatDate(doc.createdAt),
+        }));
+      setRecentScans(recent);
     } catch (error) {
-      console.error('Load recent scans error:', error);
+      console.error('Error loading recent scans:', error);
     }
   };
 
@@ -58,11 +69,31 @@ export default function DashboardScreen({ navigation }) {
     const diffDays = Math.floor(diffMs / 86400000);
 
     if (diffHrs < 1) return 'Just now';
-    if (diffHrs < 24) return `${diffHrs} hours ago`;
+    if (diffHrs < 24) return `${diffHrs} hour${diffHrs === 1 ? '' : 's'} ago`;
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
     
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const loadStats = async () => {
+    try {
+      const documents = await StorageService.getAllDocuments();
+      const now = new Date();
+      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const thisWeekDocs = documents.filter(
+        doc => new Date(doc.createdAt) >= oneWeekAgo
+      );
+
+      setStats({
+        totalScans: documents.length,
+        pagesScanned: documents.length, // Each document is 1 page for now
+        thisWeek: thisWeekDocs.length,
+      });
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
   };
 
   // Handle camera launch
@@ -132,6 +163,75 @@ export default function DashboardScreen({ navigation }) {
       // Navigate to preview screen for AI analysis
       navigation.navigate('DocumentPreview', { imageUri: result.assets[0].uri });
     }
+  };
+
+  // Handle share button - show list of documents
+  const handleShare = async () => {
+    try {
+      const documents = await StorageService.getAllDocuments();
+      
+      if (documents.length === 0) {
+        Alert.alert(
+          'No Documents',
+          'You haven\'t scanned any documents yet. Scan a document first to share it.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Sort by most recent
+      const sortedDocs = documents.sort((a, b) => 
+        new Date(b.createdAt) - new Date(a.createdAt)
+      );
+
+      setDocumentsToShare(sortedDocs);
+      setShowShareModal(true);
+    } catch (error) {
+      console.error('Error loading documents:', error);
+      Alert.alert('Error', 'Failed to load documents. Please try again.');
+    }
+  };
+
+  // Share a specific document
+  const shareDocument = async (document) => {
+    try {
+      setShowShareModal(false);
+
+      // Create a shareable text with document data
+      const shareText = `${document.data.type}\n\n` +
+        `Scanned on: ${new Date(document.createdAt).toLocaleDateString()}\n` +
+        `Confidence: ${Math.round(document.confidence * 100)}%\n\n` +
+        `Languages: ${document.languages?.join(', ') || 'N/A'}\n\n` +
+        `Extracted Data:\n${JSON.stringify(document.data, null, 2)}\n\n` +
+        `Scanned with DocScanner`;
+
+      const result = await Share.share({
+        message: shareText,
+        title: `${document.data.type} - Scanned Document`,
+      });
+
+      if (result.action === Share.sharedAction) {
+        Alert.alert('Success', 'Document shared successfully!');
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      Alert.alert('Error', 'Failed to share document. Please try again.');
+    }
+  };
+
+  const getCategoryColor = (documentType) => {
+    const colors = {
+      passport: '#6366F1',
+      id_card: '#EF4444',
+      driver_license: '#F59E0B',
+      receipt: '#10B981',
+      invoice: '#3B82F6',
+      business_card: '#8B5CF6',
+      prescription: '#EC4899',
+      contract: '#F59E0B',
+      generic: '#6B7280',
+    };
+    return colors[documentType] || '#6B7280';
   };
 
   return (
@@ -223,7 +323,10 @@ export default function DashboardScreen({ navigation }) {
               <Text style={styles.actionText}>Import PDF</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={handleShare}
+            >
               <View style={[styles.actionIcon, { backgroundColor: '#E8F5E9' }]}>
                 <Ionicons name="share-outline" size={24} color="#4CAF50" />
               </View>
@@ -236,7 +339,7 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Scans</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('History')}>
+            <TouchableOpacity>
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
@@ -244,36 +347,26 @@ export default function DashboardScreen({ navigation }) {
           <View style={styles.recentScans}>
             {recentScans.length > 0 ? (
               recentScans.map((scan) => (
-                <View key={scan.id} style={styles.scanItem}>
-                  <TouchableOpacity 
-                    style={styles.scanItemMain}
-                    onPress={() => navigation.navigate('DocumentPreview', {
-                      imageUri: scan.imageUri,
-                      existingData: scan
-                    })}
-                  >
-                    <View style={styles.scanItemIcon}>
-                      <MaterialCommunityIcons 
-                        name="file-document-outline" 
-                        size={28} 
-                        color="#6366F1" 
-                      />
-                    </View>
-                    <View style={styles.scanItemInfo}>
-                      <Text style={styles.scanItemName}>{scan.name}</Text>
-                      <Text style={styles.scanItemDetails}>
-                        {scan.pages} {scan.pages === 1 ? 'page' : 'pages'} • {scan.date}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.scanItemShareButton}
-                    onPress={() => SharingService.showShareOptions(scan)}
-                  >
-                    <Ionicons name="share-outline" size={20} color="#6366F1" />
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity 
+                  key={scan.id} 
+                  style={styles.scanItem}
+                  onPress={() => navigation.navigate('History')}
+                >
+                  <View style={styles.scanItemIcon}>
+                    <MaterialCommunityIcons 
+                      name="file-document-outline" 
+                      size={28} 
+                      color="#6366F1" 
+                    />
+                  </View>
+                  <View style={styles.scanItemInfo}>
+                    <Text style={styles.scanItemName}>{scan.name}</Text>
+                    <Text style={styles.scanItemDetails}>
+                      {scan.pages} {scan.pages === 1 ? 'page' : 'pages'} • {scan.date}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#999" />
+                </TouchableOpacity>
               ))
             ) : (
               <View style={styles.emptyRecentScans}>
@@ -282,10 +375,8 @@ export default function DashboardScreen({ navigation }) {
                   size={48} 
                   color="#E5E7EB" 
                 />
-                <Text style={styles.emptyRecentText}>No recent scans</Text>
-                <Text style={styles.emptyRecentSubtext}>
-                  Scan your first document to get started
-                </Text>
+                <Text style={styles.emptyRecentText}>No scans yet</Text>
+                <Text style={styles.emptyRecentSubtext}>Start scanning to see your documents here</Text>
               </View>
             )}
           </View>
@@ -296,22 +387,107 @@ export default function DashboardScreen({ navigation }) {
           <Text style={styles.statsTitle}>Your Activity</Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{totalScans}</Text>
+              <Text style={styles.statNumber}>{stats.totalScans}</Text>
               <Text style={styles.statLabel}>Total Scans</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{totalScans}</Text>
+              <Text style={styles.statNumber}>{stats.pagesScanned}</Text>
               <Text style={styles.statLabel}>Pages Scanned</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{recentScans.length}</Text>
-              <Text style={styles.statLabel}>Recent</Text>
+              <Text style={styles.statNumber}>{stats.thisWeek}</Text>
+              <Text style={styles.statLabel}>This Week</Text>
             </View>
           </View>
         </View>
       </ScrollView>
+
+      {/* Share Modal */}
+      <Modal
+        visible={showShareModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowShareModal(false)}
+      >
+        <View style={styles.shareModalOverlay}>
+          <View style={styles.shareModalContent}>
+            {/* Modal Header */}
+            <View style={styles.shareModalHeader}>
+              <Text style={styles.shareModalTitle}>Share Document</Text>
+              <TouchableOpacity
+                style={styles.shareModalClose}
+                onPress={() => setShowShareModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Document List */}
+            <ScrollView style={styles.shareDocumentList}>
+              {documentsToShare.map((doc) => (
+                <TouchableOpacity
+                  key={doc.id}
+                  style={styles.shareDocumentItem}
+                  onPress={() => shareDocument(doc)}
+                >
+                  <View style={styles.shareDocumentIcon}>
+                    <View
+                      style={[
+                        styles.shareDocumentIconCircle,
+                        { backgroundColor: `${getCategoryColor(doc.documentType)}20` },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="file-document"
+                        size={24}
+                        color={getCategoryColor(doc.documentType)}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.shareDocumentInfo}>
+                    <Text style={styles.shareDocumentName}>
+                      {doc.data?.type || 'Document'}
+                    </Text>
+                    <View style={styles.shareDocumentMeta}>
+                      <Text style={styles.shareDocumentDate}>
+                        {new Date(doc.createdAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </Text>
+                      <View style={styles.shareDocumentDot} />
+                      <Text style={styles.shareDocumentConfidence}>
+                        {Math.round(doc.confidence * 100)}% confidence
+                      </Text>
+                    </View>
+                    {doc.languages && doc.languages.length > 0 && (
+                      <View style={styles.shareDocumentLanguages}>
+                        {doc.languages.slice(0, 2).map((lang, idx) => (
+                          <View key={idx} style={styles.shareLanguageTag}>
+                            <Text style={styles.shareLanguageText}>{lang}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  <Ionicons name="share-outline" size={22} color="#6366F1" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.shareModalFooter}>
+              <Text style={styles.shareModalFooterText}>
+                Tap a document to share
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Camera Modal */}
       <Modal
@@ -512,37 +688,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderRadius: 12,
-  },
-  scanItemMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  scanItemShareButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EEF2FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  emptyRecentScans: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  emptyRecentText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#999',
-    marginTop: 12,
-  },
-  emptyRecentSubtext: {
-    fontSize: 14,
-    color: '#CCC',
-    marginTop: 4,
-    textAlign: 'center',
   },
   scanItemIcon: {
     width: 48,
@@ -745,5 +890,134 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     backgroundColor: '#fff',
+  },
+  emptyRecentScans: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyRecentText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12,
+  },
+  emptyRecentSubtext: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  shareModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  shareModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    paddingBottom: 40,
+  },
+  shareModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  shareModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  shareModalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shareDocumentList: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  shareDocumentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 16,
+    marginBottom: 12,
+  },
+  shareDocumentIcon: {
+    marginRight: 12,
+  },
+  shareDocumentIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shareDocumentInfo: {
+    flex: 1,
+  },
+  shareDocumentName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 6,
+  },
+  shareDocumentMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  shareDocumentDate: {
+    fontSize: 13,
+    color: '#666',
+  },
+  shareDocumentDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#999',
+    marginHorizontal: 8,
+  },
+  shareDocumentConfidence: {
+    fontSize: 13,
+    color: '#666',
+  },
+  shareDocumentLanguages: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  shareLanguageTag: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  shareLanguageText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6366F1',
+  },
+  shareModalFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    alignItems: 'center',
+  },
+  shareModalFooterText: {
+    fontSize: 13,
+    color: '#999',
+    fontStyle: 'italic',
   },
 });
