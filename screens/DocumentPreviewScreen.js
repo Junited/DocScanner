@@ -17,6 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as FileSystem from 'expo-file-system/legacy';
 import OpenAIService from '../services/OpenAIService';
 import StorageService from '../services/StorageService';
+import SharingService from '../services/SharingService';
 
 const { width } = Dimensions.get('window');
 
@@ -69,12 +70,13 @@ export default function DocumentPreviewScreen({ route, navigation }) {
         data: editedData || documentData.data,
       };
 
+      let savedDoc;
       if (existingData && existingData.id) {
         // Update existing document
-        await StorageService.updateDocument(existingData.id, documentToSave);
+        savedDoc = await StorageService.updateDocument(existingData.id, documentToSave);
       } else {
         // Save new document
-        await StorageService.saveDocument(documentToSave);
+        savedDoc = await StorageService.saveDocument(documentToSave);
       }
 
       Alert.alert(
@@ -82,8 +84,18 @@ export default function DocumentPreviewScreen({ route, navigation }) {
         existingData ? 'Document updated successfully!' : 'Document saved successfully!',
         [
           {
-            text: 'OK',
+            text: 'Share',
+            onPress: () => {
+              SharingService.showShareOptions(savedDoc || documentToSave);
+            },
+          },
+          {
+            text: 'View History',
             onPress: () => navigation.navigate('History'),
+          },
+          {
+            text: 'Done',
+            style: 'cancel',
           },
         ]
       );
@@ -92,6 +104,15 @@ export default function DocumentPreviewScreen({ route, navigation }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleShare = () => {
+    const docToShare = {
+      imageUri,
+      ...documentData,
+      data: editedData || documentData.data,
+    };
+    SharingService.showShareOptions(docToShare);
   };
 
   const handleEdit = (key, value) => {
@@ -367,6 +388,14 @@ export default function DocumentPreviewScreen({ route, navigation }) {
           </Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={handleShare}
+        >
+          <Ionicons name="share-outline" size={24} color="#6366F1" />
+          <Text style={[styles.secondaryButtonText, { color: '#6366F1' }]}>Share</Text>
+        </TouchableOpacity>
+
         {!existingData && (
           <TouchableOpacity
             style={[styles.primaryButton, saving && styles.primaryButtonDisabled]}
@@ -378,7 +407,7 @@ export default function DocumentPreviewScreen({ route, navigation }) {
             ) : (
               <>
                 <Ionicons name="checkmark" size={24} color="#fff" />
-                <Text style={styles.primaryButtonText}>Save Document</Text>
+                <Text style={styles.primaryButtonText}>Save</Text>
               </>
             )}
           </TouchableOpacity>
@@ -773,14 +802,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
-    gap: 12,
+    gap: 8,
   },
   secondaryButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     paddingVertical: 16,
     backgroundColor: '#F5F5F5',
     borderRadius: 12,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,9 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
+import StorageService from '../services/StorageService';
+import SharingService from '../services/SharingService';
 
 const { width } = Dimensions.get('window');
 
@@ -22,13 +25,45 @@ export default function DashboardScreen({ navigation }) {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [cameraRef, setCameraRef] = useState(null);
+  const [recentScans, setRecentScans] = useState([]);
+  const [totalScans, setTotalScans] = useState(0);
 
-  // Mock data for recent scans
-  const recentScans = [
-    { id: 1, name: 'Invoice_2024', pages: 3, date: '2 hours ago' },
-    { id: 2, name: 'Receipt_Grocery', pages: 1, date: 'Yesterday' },
-    { id: 3, name: 'Contract_Document', pages: 5, date: '2 days ago' },
-  ];
+  useFocusEffect(
+    React.useCallback(() => {
+      loadRecentScans();
+    }, [])
+  );
+
+  const loadRecentScans = async () => {
+    try {
+      const docs = await StorageService.getAllDocuments();
+      setTotalScans(docs.length);
+      // Get the 3 most recent documents
+      setRecentScans(docs.slice(0, 3).map(doc => ({
+        ...doc,
+        name: doc.data?.type || 'Document',
+        pages: 1,
+        date: formatDate(doc.createdAt),
+      })));
+    } catch (error) {
+      console.error('Load recent scans error:', error);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffHrs < 1) return 'Just now';
+    if (diffHrs < 24) return `${diffHrs} hours ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
 
   // Handle camera launch
   const handleOpenCamera = async () => {
@@ -201,30 +236,58 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Scans</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('History')}>
               <Text style={styles.seeAllText}>See All</Text>
             </TouchableOpacity>
           </View>
           
           <View style={styles.recentScans}>
-            {recentScans.map((scan) => (
-              <TouchableOpacity key={scan.id} style={styles.scanItem}>
-                <View style={styles.scanItemIcon}>
-                  <MaterialCommunityIcons 
-                    name="file-document-outline" 
-                    size={28} 
-                    color="#6366F1" 
-                  />
+            {recentScans.length > 0 ? (
+              recentScans.map((scan) => (
+                <View key={scan.id} style={styles.scanItem}>
+                  <TouchableOpacity 
+                    style={styles.scanItemMain}
+                    onPress={() => navigation.navigate('DocumentPreview', {
+                      imageUri: scan.imageUri,
+                      existingData: scan
+                    })}
+                  >
+                    <View style={styles.scanItemIcon}>
+                      <MaterialCommunityIcons 
+                        name="file-document-outline" 
+                        size={28} 
+                        color="#6366F1" 
+                      />
+                    </View>
+                    <View style={styles.scanItemInfo}>
+                      <Text style={styles.scanItemName}>{scan.name}</Text>
+                      <Text style={styles.scanItemDetails}>
+                        {scan.pages} {scan.pages === 1 ? 'page' : 'pages'} • {scan.date}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.scanItemShareButton}
+                    onPress={() => SharingService.showShareOptions(scan)}
+                  >
+                    <Ionicons name="share-outline" size={20} color="#6366F1" />
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.scanItemInfo}>
-                  <Text style={styles.scanItemName}>{scan.name}</Text>
-                  <Text style={styles.scanItemDetails}>
-                    {scan.pages} {scan.pages === 1 ? 'page' : 'pages'} • {scan.date}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#999" />
-              </TouchableOpacity>
-            ))}
+              ))
+            ) : (
+              <View style={styles.emptyRecentScans}>
+                <MaterialCommunityIcons 
+                  name="file-document-outline" 
+                  size={48} 
+                  color="#E5E7EB" 
+                />
+                <Text style={styles.emptyRecentText}>No recent scans</Text>
+                <Text style={styles.emptyRecentSubtext}>
+                  Scan your first document to get started
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -233,18 +296,18 @@ export default function DashboardScreen({ navigation }) {
           <Text style={styles.statsTitle}>Your Activity</Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>24</Text>
+              <Text style={styles.statNumber}>{totalScans}</Text>
               <Text style={styles.statLabel}>Total Scans</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>156</Text>
+              <Text style={styles.statNumber}>{totalScans}</Text>
               <Text style={styles.statLabel}>Pages Scanned</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>12</Text>
-              <Text style={styles.statLabel}>This Week</Text>
+              <Text style={styles.statNumber}>{recentScans.length}</Text>
+              <Text style={styles.statLabel}>Recent</Text>
             </View>
           </View>
         </View>
@@ -449,6 +512,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderRadius: 12,
+  },
+  scanItemMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  scanItemShareButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  emptyRecentScans: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyRecentText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#999',
+    marginTop: 12,
+  },
+  emptyRecentSubtext: {
+    fontSize: 14,
+    color: '#CCC',
+    marginTop: 4,
+    textAlign: 'center',
   },
   scanItemIcon: {
     width: 48,
